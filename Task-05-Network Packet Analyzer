@@ -1,0 +1,44 @@
+import pcap
+from struct import unpack
+
+def parse_ethernet_header(data):
+    dest_mac, src_mac, proto = unpack('! 6s 6s H', data[:14])
+    return {'Dest MAC': ':'.join(f"{b:02x}" for b in dest_mac),
+            'Src MAC': ':'.join(f"{b:02x}" for b in src_mac),
+            'Protocol': socket.htons(proto)}
+
+def parse_ip_header(data):
+    ip_header = unpack('!BBHHHBBH4s4s', data[:20])
+    return {'Version': ip_header[0] >> 4,
+            'Header Length': (ip_header[0] & 15) * 4,
+            'TTL': ip_header[5],
+            'Protocol': ip_header[6],
+            'Source IP': socket.inet_ntoa(ip_header[8]),
+            'Destination IP': socket.inet_ntoa(ip_header[9])}
+
+def parse_tcp_header(data):
+    tcp_header = unpack('!HHLLBBHHH', data[:20])
+    return {'Source Port': tcp_header[0],
+            'Destination Port': tcp_header[1],
+            'Sequence Number': tcp_header[2],
+            'Acknowledge Number': tcp_header[3],
+            'Header Length': (tcp_header[4] >> 4) * 4}
+
+def packet_sniffer(pktlen, data, timestamp):
+    eth_header = parse_ethernet_header(data)
+    
+    if eth_header['Protocol'] == 8:  # IPv4
+        ip_header = parse_ip_header(data[14:])
+        
+        if ip_header['Protocol'] == 6:  # TCP
+            tcp_header = parse_tcp_header(data[14 + ip_header['Header Length']:])
+            payload_data = data[14 + ip_header['Header Length'] + tcp_header['Header Length']:]
+            
+            print(f"Source IP: {ip_header['Source IP']}:{tcp_header['Source Port']} --> "
+                  f"Dest IP: {ip_header['Destination IP']}:{tcp_header['Destination Port']}")
+            print(f"Payload Data: {repr(payload_data)}")
+            print("---------------------------------------------------------")
+
+pc = pcap.pcap()
+pc.setfilter('tcp')
+pc.loop(packet_sniffer)  # This captures packets indefinitely
